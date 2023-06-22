@@ -46,3 +46,15 @@ The examples are generated on the fly. We recommend setting `num_workers>0` for 
 Additional supported datasets are:
 `dataset_name = "deep"` and `dataset_name = "kb13"`.
 
+
+## Cite
+
+```bibtex
+@inproceedings{fostiropoulos2023probing,
+  title={Probing Reasoning of Language Models with Inductive In-Context Learning},
+  author={Fostiropoulos, Iordanis and Itti, Laurent},
+  booktitle={International Joint Conference on Artificial Intelligence 2023 Workshop on Knowledge-Based Compositional Generalization},
+  year={2023}
+}
+```
+
