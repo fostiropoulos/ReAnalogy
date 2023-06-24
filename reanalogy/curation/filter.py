@@ -1,6 +1,6 @@
 import json
 import pickle
-import typing as ty
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +21,7 @@ VOCAB_FILE = "vocab.pkl"
 
 def _make_vocab_map(vocab):
     n_special_tokens = len(SPECIAL_TOKENS)
+    vocab = set([ord(c) for c in vocab if len(c) > 0] + [i for i in np.arange(256)])
     return dict(zip(vocab, np.arange(n_special_tokens, len(vocab) + n_special_tokens)))
 
 
@@ -28,7 +29,7 @@ def _inverse_vocab(vocab):
     return {v: k for k, v in vocab.items()}
 
 
-def load_lingua_franca(root_path: Path):
+def load_lingua_franca(root_path: Path) -> list[str]:
 
     p = root_path.joinpath("uniq-regexes-8.json")
     if not p.exists():
@@ -45,7 +46,7 @@ def load_lingua_franca(root_path: Path):
     return linguage_franca
 
 
-def load_deep_regex(root_path: Path):
+def load_deep_regex(root_path: Path) -> list[str]:
     p = root_path.joinpath("deep-regex.txt")
     if not p.exists():
         urlretrieve(
@@ -57,7 +58,7 @@ def load_deep_regex(root_path: Path):
     return regex
 
 
-def load_reanalogy(root_path: Path):
+def load_reanalogy(root_path: Path) -> list[str]:
     p = root_path.joinpath(f"reanalogy.pkl")
     if not p.exists():
         urlretrieve(
@@ -65,7 +66,7 @@ def load_reanalogy(root_path: Path):
             p.as_posix(),
         )
 
-    return pickle.load(p.open("rb"))
+    return [regex.replace("\\u", r"\u") for regex in pickle.load(p.open("rb"))]
 
 
 def load_vocab(root_path: Path):
@@ -77,20 +78,20 @@ def load_vocab(root_path: Path):
             p.as_posix(),
         )
 
-    vocab = p.read_bytes()
+    vocab = pickle.load(p.open("rb"))
     vocab_map: dict[int, int] = _make_vocab_map(vocab)
 
     inv_vocab_map = _inverse_vocab(vocab_map)
     return vocab_map, inv_vocab_map
 
 
-def make_reanalogy(root_path: Path):
+def make_reanalogy(root_path: Path) -> list[str]:
     lf = load_lingua_franca(root_path)
     reanalogy = parse(root_path)
     return lf + reanalogy + load_kb13(root_path) + load_deep_regex(root_path)
 
 
-def load_kb13(root_path: Path):
+def load_kb13(root_path: Path) -> list[str]:
     p = root_path.joinpath("KB13.txt")
     if not p.exists():
         urlretrieve(
@@ -102,7 +103,7 @@ def load_kb13(root_path: Path):
     return regex
 
 
-def read_bad_regex(root_path: Path):
+def read_bad_regex(root_path: Path) -> list[str]:
     p = root_path.joinpath(BAD_REGEX)
     if not p.exists():
         # write_bad_regex(root_path, [])
@@ -115,48 +116,47 @@ def read_bad_regex(root_path: Path):
     return regexes
 
 
-def write_bad_regex(root_path: Path, regexes):
-    pickle.dump(regexes, root_path.joinpath(BAD_REGEX).open("wb"))
+def write_bad_regex(root_path: Path, regexes: list[str]):
+    p = root_path.joinpath(f".{BAD_REGEX}")
+    pickle.dump(regexes, p.open("wb"))
+    shutil.move(p, root_path.joinpath(BAD_REGEX))
 
 
 def _append_bad_regex(root_path: Path, regex):
-    with FileLock(root_path.joinpath(f"{BAD_REGEX}.lock").as_posix()):
-        bad_regex = read_bad_regex(root_path)
-        if regex not in bad_regex:
-            bad_regex.append(regex)
-            write_bad_regex(root_path, bad_regex)
+    bad_regex: list[str] = read_bad_regex(root_path)
+    if regex not in bad_regex:
+        bad_regex.append(regex)
+        write_bad_regex(root_path, bad_regex)
 
 
-def _remove_bad_regex(root_path: Path, regex):
-    with FileLock(root_path.joinpath(f"{BAD_REGEX}.lock").as_posix()):
-        bad_regex = read_bad_regex(root_path)
-        if regex in bad_regex:
-            bad_regex.remove(regex)
-            write_bad_regex(root_path, bad_regex)
+def _remove_bad_regex(root_path: Path, regex: str):
+    bad_regex = read_bad_regex(root_path)
+    if regex in bad_regex:
+        bad_regex.remove(regex)
+        write_bad_regex(root_path, bad_regex)
+
+
+def filter_regex(bad_regex_root_path: Path, regex: str, num_samples=12):
+
+    with FileLock(bad_regex_root_path.joinpath(f"{BAD_REGEX}.lock").as_posix()):
+        _append_bad_regex(bad_regex_root_path, regex)
+
+        out = gen_regex(regex, num_samples=num_samples, check_match=True)
+        if out is not None and len(out) > 0:
+            _remove_bad_regex(bad_regex_root_path, regex)
+            return regex
 
 
 def filter_regexes(root_path: Path):
     ds = make_reanalogy(root_path)
-
     ds = [_ for _ in ds if len(str(_)) < MAX_SUB_SEQ_LEN and len(str(_)) > 5]
-    res = []
     with FileLock(root_path.joinpath(f"{BAD_REGEX}.lock").as_posix()):
         bad_regex = read_bad_regex(root_path)
     valid_regex = []
     set(ds)
     for regex in tqdm(set(ds).difference(bad_regex)):
         try:
-            bregex = regex.encode("utf-8", errors="ignore")
-            dregex = bregex.decode()
-            _append_bad_regex(root_path, dregex)
-            out = gen_regex(bregex, num_samples=10, check_match=True)
-            if (
-                out is not None
-                and len(out) > 0
-                and any([len(_out) > 5 and len(_out) < 64 for _out in out])
-            ):
-                _remove_bad_regex(root_path, dregex)
-                valid_regex.append(dregex)
+            valid_regex.append(filter_regex(root_path, regex))
         except Exception as e:
             # raise e
             pass

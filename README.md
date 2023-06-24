@@ -47,6 +47,27 @@ Additional supported datasets are:
 `dataset_name = "deep"` and `dataset_name = "kb13"`.
 
 
+## Decoding and Scoring
+
+```python
+idx = 0
+# This is the ground-truth regex
+regex = ds.dataset[idx]
+# this is the encoded sequence
+seqs = ds[idx]
+# the regex is appended to the end of the sequence if `return_regex=True`
+examples = ds.decode_examples(seqs)
+if ds.return_regex:
+    assert ds.decode_regex(seqs) == str(regex)
+ds.score(regex, examples).mean()
+ds.validate(regex, examples).mean()
+```
+
+**NOTE** We use ␀ (`\u2400`) to represent unknown tokens.
+
+<!-- **NOTE** `ds.score(regex, examples).mean()` can often be `< 1` which is caused by unicode encoding / decoding errors. Currently in-progress of addressing. -->
+
+
 ## Cite
 
 ```bibtex

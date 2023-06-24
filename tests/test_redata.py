@@ -1,21 +1,26 @@
+import tempfile
 from pathlib import Path
-from reanalogy.dataset import ReAnalogy
+import typing as ty
 
 from tqdm import tqdm
-import tempfile
+
+from reanalogy.dataset import ReAnalogy
 from torch.utils.data import DataLoader
 
 
-def test_redata(tmp_path: Path | str):
+def _test_dataset(
+    tmp_path: Path | str, dataset: ty.Literal["reanalogy", "deep", "kb13"]
+):
 
     ds = ReAnalogy(
         tmp_path,
         split="train",
         return_regex=True,
-        dataset_name="reanalogy",
-        n_examples=5,
+        dataset_name=dataset,
+        n_examples=12,
+        filter=True,
     )
-    dl = DataLoader(ds, batch_size=128, shuffle=False, num_workers=0)
+    dl = DataLoader(ds, batch_size=128, shuffle=False, num_workers=10)
     for i, s in enumerate(tqdm(dl)):
 
         seqs = s["seq"]
@@ -32,9 +37,19 @@ def test_redata(tmp_path: Path | str):
             assert ds.score(regex, examples).mean() > 0
             assert ds.validate(regex, examples).mean() > 0
 
-        pass
+
+def test_reanalogy(tmp_path: Path | str):
+    _test_dataset(tmp_path, "reanalogy")
+
+
+def test_deep(tmp_path: Path | str):
+    _test_dataset(tmp_path, "deep")
+
+
+def test_kb13(tmp_path: Path | str):
+    _test_dataset(tmp_path, "kb13")
 
 
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp_path:
-        bad_idxs = test_redata(tmp_path)
+        bad_idxs = test_reanalogy(tmp_path)
